@@ -278,7 +278,7 @@ static void session_save_devices(Session *s, FILE *f) {
         }
 }
 
-static int trigger_remote_uaccess(void) {
+static int trigger_raccess(void) {
         int r;
 
         _cleanup_(sd_device_enumerator_unrefp) sd_device_enumerator *e = NULL;
@@ -286,13 +286,13 @@ static int trigger_remote_uaccess(void) {
         if (r < 0)
                 return r;
 
-        r = sd_device_enumerator_add_match_tag(e, "uremotegraphicalaccess");
+        r = sd_device_enumerator_add_match_tag(e, "raccess");
         if (r < 0)
                 return r;
 
         FOREACH_DEVICE(e, d) {
                 /* Verify that the tag is still in place. */
-                r = sd_device_has_current_tag(d, "uremotegraphicalaccess");
+                r = sd_device_has_current_tag(d, "raccess");
                 if (r < 0)
                         return r;
                 if (r == 0)
@@ -349,12 +349,14 @@ int session_save(Session *s) {
                 "IS_DISPLAY=%s\n"
                 "STATE=%s\n"
                 "REMOTE=%s\n"
+                "RACCESS=%s\n"
                 "LEADER_FD_SAVED=%s\n",
                 s->user->user_record->uid,
                 one_zero(session_is_active(s)),
                 one_zero(s->user->display == s),
                 session_state_to_string(session_get_state(s)),
                 one_zero(s->remote),
+                one_zero(s->remote_access),
                 one_zero(s->leader_fd_saved));
 
         env_file_fputs_assignment(f, "USER=", s->user->user_record->user_name);
@@ -495,6 +497,7 @@ static int session_load_leader(Session *s, uint64_t pidfdid) {
 
 int session_load(Session *s) {
         _cleanup_free_ char *remote = NULL,
+                *remote_access = NULL,
                 *seat = NULL,
                 *tty_validity = NULL,
                 *vtnr = NULL,
@@ -521,6 +524,7 @@ int session_load(Session *s) {
 
         r = parse_env_file(NULL, s->state_file,
                            "REMOTE",          &remote,
+                           "RACCESS",         &remote_access,
                            "SCOPE",           &s->scope,
                            "SCOPE_JOB",       &s->scope_job,
                            "FIFO",            &fifo_path,
@@ -579,6 +583,12 @@ int session_load(Session *s) {
                 k = parse_boolean(remote);
                 if (k >= 0)
                         s->remote = k;
+        }
+
+        if (remote_access) {
+                k = parse_boolean(remote_access);
+                if (k >= 0)
+                        s->remote_access = k;
         }
 
         if (vtnr)
@@ -905,8 +915,8 @@ int session_start(Session *s, sd_bus_message *properties, sd_bus_error *error) {
         if (s->seat)
                 (void) seat_save(s->seat);
 
-        if (!s->seat && s->remote && SESSION_TYPE_IS_GRAPHICAL(s->type))
-                trigger_remote_uaccess();
+        if (!s->seat && s->remote_access)
+                trigger_raccess();
 
         /* Send signals */
         (void) session_send_signal(s, true);
@@ -998,8 +1008,8 @@ int session_stop(Session *s, bool force) {
         (void) session_save(s);
         (void) user_save(s->user);
 
-        if (!s->seat && s->remote && SESSION_TYPE_IS_GRAPHICAL(s->type))
-                trigger_remote_uaccess();
+        if (!s->seat && s->remote_access)
+                trigger_raccess();
 
         return r;
 }

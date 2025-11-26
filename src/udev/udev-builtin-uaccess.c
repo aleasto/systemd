@@ -60,21 +60,16 @@ static int builtin_uaccess(UdevEvent *event, int argc, char *argv[]) {
                 }
         }
 
-        if (sd_device_has_tag(dev, "uremotegraphicalaccess") && sd_get_sessions(&sessions)) {
+        if (sd_device_has_tag(dev, "raccess") && sd_get_sessions(&sessions)) {
                 STRV_FOREACH(s, sessions) {
                         _cleanup_free_ char *state = NULL, *type = NULL;
                         if (sd_session_get_state(*s, &state) < 0)
                                 continue;
                         if (streq(state, "closing"))
                                 continue;
+                        if (!sd_session_has_raccess(*s))
+                                continue;
                         if (sd_session_get_uid(*s, &uid) < 0)
-                                continue;
-                        if (sd_session_get_type(*s, &type) < 0)
-                                continue;
-                        if (!sd_session_is_remote(*s))
-                                continue;
-                        /* equivalent to SESSION_TYPE_IS_GRAPHICAL */
-                        if (!STR_IN_SET(type, "x11", "wayland", "mir"))
                                 continue;
                         if (!GREEDY_REALLOC(users, n + 1))
                                 return log_oom();
